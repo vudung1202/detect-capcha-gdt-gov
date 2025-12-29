@@ -20,7 +20,7 @@ class CaptchaSolver:
     def load_db(self):
         """
         Loads the knowledge base from the JSON file.
-        Initializes an empty list if file doesn't exist or is invalid.
+        Initializes an empty list and creates the file if it doesn't exist.
         """
         if os.path.exists(self.db_path):
             try:
@@ -30,6 +30,7 @@ class CaptchaSolver:
                 self.knowledge_base = []
         else:
             self.knowledge_base = []
+            self.save_db()
 
     def save_db(self):
         """
