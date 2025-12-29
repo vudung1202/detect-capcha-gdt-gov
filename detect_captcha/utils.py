@@ -36,13 +36,30 @@ def process_png_content(image_content):
     if img is None:
         return []
         
-    # Thresholding (Invert: Black text -> White regions)
-    _, thresh = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY_INV)
+    # Standardize size (Upscale if too small)
+    # This is critical for reliable erosion/morphology on small images
+    h, w = img.shape
+    if h < 50:
+        scale = 3.0
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        
+    # Preprocessing to clean noise
+    # 1. Gaussian Blur to reduce high frequency noise
+    blurred = cv2.GaussianBlur(img, (3, 3), 0)
     
-    # Remove small noise
+    # 2. Adaptive Thresholding or Otsu
+    # Invert typical captcha (dark text on light background) -> text becomes white
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # 2.5 Remove horizontal lines (Strikethrough)
+    # Use a vertical kernel (1, 2) to preserve vertical structure but kill thin horizontal lines
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 2))
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+    
+    # 3. Morphological operations
+    # If characters are touching, we NEED to erode to separate them
     kernel = np.ones((2,2), np.uint8)
-    # Erode then Dilate (Open)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+    thresh = cv2.erode(thresh, kernel, iterations=1)
     
     # Find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -53,18 +70,53 @@ def process_png_content(image_content):
     # Sort by X to maintain order
     c_list.sort(key=lambda x: x[1][0])
     
+    final_paths = []
+    
     for cnt, bbox in c_list:
         x, y, w, h = bbox
         area = cv2.contourArea(cnt)
         
         # Filter tiny noise
-        if area < 5 or h < 5:
+        if area < 150 or h < 20:
             continue
             
-        points = cnt.reshape(-1, 2).tolist()
-        paths.append({'points': points})
+        # Heuristic: Check aspect ratio (Width / Height)
+        # Typical char is taller than wide (ratio < 1.0) or square.
+        # If ratio > 1.2, it might be 2 chars fused.
+        # If ratio > 2.5, it might be 3 chars.
         
-    return paths
+        aspect_ratio = w / float(h)
+        
+        # Simple splitting logic
+        if aspect_ratio > 1.1:
+            # Estimate how many chars
+            # Assume average char aspect ratio is ~0.75 - 0.9
+            # Dynamic split:
+            num_chars = int(round(aspect_ratio / 0.80))
+            if num_chars < 2: num_chars = 2
+            
+            step = w // num_chars
+            
+            # Divide the contour into chunks
+            for i in range(num_chars):
+                sub_points = []
+                start_x = x + i * step
+                end_x = x + (i + 1) * step
+                
+                # Filter points in this x-range
+                # Reshape to list of [x, y]
+                pts = cnt.reshape(-1, 2)
+                for px, py in pts:
+                    if start_x <= px < end_x:
+                        sub_points.append([px, py])
+                
+                if len(sub_points) > 10: # Increased from 5 because upscaled
+                    final_paths.append({'points': sub_points})
+        else:
+            points = cnt.reshape(-1, 2).tolist()
+            final_paths.append({'points': points})
+            
+    return final_paths
 
 def parse_svg_paths(svg_content):
     """
