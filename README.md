@@ -2,17 +2,22 @@
 
 A Python mini-project to recognize text from SVG CAPTCHAs.
 
+## Prerequisites
+
+- Python 3.8+
+- pip3
+
 ## Quick Start
 
 ```bash
 # Install dependencies
-pip install -r detect_captcha/requirements.txt
+pip3 install -r detect_captcha/requirements.txt
 
-# Train the solver (interactive)
-python -m detect_captcha.train
+# Rebuild database from labeled data
+python3 -m detect_captcha.train
 
 # Run the API server
-uvicorn detect_captcha.main:app --reload
+python3 -m uvicorn detect_captcha.main:app --reload
 ```
 
 ## API Usage
@@ -39,7 +44,7 @@ curl http://localhost:8000/
 
 ## How It Works
 
-1. **Training**: Use `python -m detect_captcha.train` to fetch CAPTCHAs and label them manually.
+1. **Training**: Use `python3 -m detect_captcha.train` to rebuild the database from labeled SVG files.
 2. **Matching**: The solver normalizes SVG paths to point clouds and finds the closest match in the database.
 3. **API**: FastAPI serves the solution via a simple POST endpoint.
 
